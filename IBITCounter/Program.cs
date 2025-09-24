@@ -33,7 +33,12 @@ builder.Services.AddSingleton(
     builder.Configuration.GetSection("BotConfig:Coefficients").Get<CoefficientStorage>()??
     throw new SerializationException("Coefficients not found in  configuration"));
 
-builder.Services.AddScoped<IIndexSender>();
+builder.Services.AddHttpClient<IIndexSender, IndexSender>(opt =>
+{
+    opt.BaseAddress = new Uri(IndexSender.BaseAddress);
+    opt.DefaultRequestHeaders.TryAddWithoutValidation("APIKEY", Environment.GetEnvironmentVariable("API_KEY"));
+});
+
 builder.Services.AddScoped<ICpmRepo>();
 builder.Services.Configure<BotConfig>(builder.Configuration.GetSection("BotConfig"));
 
