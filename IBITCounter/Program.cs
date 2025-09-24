@@ -24,7 +24,7 @@ builder.Services.AddCors(cors=>
             .AllowAnyOrigin()
             .AllowCredentials()
         ));
-builder.Services.AddDbContext<PosttradeDbContext>(opt=>
+builder.Services.AddDbContextPool<PosttradeDbContext>(opt=>
     opt
         .UseNpgsql(Environment.GetEnvironmentVariable("POSTTRADE_DB"))
         .UseSnakeCaseNamingConvention());
