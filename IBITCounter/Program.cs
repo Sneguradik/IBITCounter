@@ -13,9 +13,6 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.File("-.log", rollingInterval: RollingInterval.Day)
     .CreateLogger();
 
-builder.Services.AddControllers();
-
-builder.Services.AddOpenApi();
 builder.Services.AddCors(cors=>
     cors.AddDefaultPolicy(policy=>
         policy
@@ -24,6 +21,8 @@ builder.Services.AddCors(cors=>
             .AllowAnyOrigin()
             .AllowCredentials()
         ));
+builder.Services.AddControllers();
+
 builder.Services.AddDbContextPool<PosttradeDbContext>(opt=>
     opt
         .UseNpgsql(Environment.GetEnvironmentVariable("POSTTRADE_DB"))
@@ -46,22 +45,22 @@ builder.Services.AddQuartzHostedService();
 
 builder.Services.AddQuartz(quartz =>
 {
-    quartz.AddJob<IndexJob>(JobKey.Create(nameof(IndexJob))).AddTrigger(trigger => trigger
+    var indexJobKey = JobKey.Create(nameof(IndexJob));
+    quartz.AddJob<IndexJob>(indexJobKey).AddTrigger(trigger => trigger
+        .ForJob(indexJobKey)
         .WithIdentity(nameof(IndexJob)+".Trigger")
         .WithSimpleSchedule(x=>x.WithIntervalInMinutes(1))
     );
+    var dailyJobKey = JobKey.Create(nameof(DailyJob));
     quartz.AddJob<DailyJob>(JobKey.Create(nameof(DailyJob))).AddTrigger(trigger => trigger
+        .ForJob(dailyJobKey)
         .WithIdentity(nameof(DailyJob) + ".Trigger")
         .WithSimpleSchedule(x => x.WithIntervalInHours(24)));
 });
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
+
 
 app.UseHttpsRedirection();
 
