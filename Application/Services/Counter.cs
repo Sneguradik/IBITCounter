@@ -19,7 +19,8 @@ public static class Counter
                 c.TradeTime.Minute == startTime.Minute).ToList();
 
         return currCpm.Count == 0
-            ? cpm.LastOrDefault()?.Price??cpm.First(x => x.TradeTime < startTime).Price
+            ? cpm.First(x => x.TradeTime < startTime).Price
             : currCpm.Average(x => x.Price);
     }
+    
 }

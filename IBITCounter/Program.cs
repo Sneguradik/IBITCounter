@@ -1,10 +1,17 @@
 using System.Runtime.Serialization;
 using Application.Models.Entities;
 using Application.Services;
+using Application.Services.Exchanges;
 using IBITCounter.Jobs;
 using Microsoft.EntityFrameworkCore;
 using Quartz;
 using Serilog;
+
+static TimeZoneInfo Tz(string iana, string windows)
+{
+    try { return TimeZoneInfo.FindSystemTimeZoneById(iana); }
+    catch { return TimeZoneInfo.FindSystemTimeZoneById(windows); }
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,25 +45,79 @@ builder.Services.AddHttpClient<IIndexSender, IndexSender>(opt =>
     opt.DefaultRequestHeaders.TryAddWithoutValidation("APIKEY", Environment.GetEnvironmentVariable("API_KEY"));
 });
 
-builder.Services.AddScoped<ICpmRepo>();
+builder.Services.AddScoped<ICpmRepo, CpmRepo>();
 builder.Services.Configure<BotConfig>(builder.Configuration.GetSection("BotConfig"));
 
 builder.Services.AddQuartzHostedService();
 
 builder.Services.AddQuartz(quartz =>
 {
+    var tzMoscow = Tz("Europe/Moscow", "Russian Standard Time");
+    var tzNewYork = Tz("America/New_York", "Eastern Standard Time");
+
+// INDEX: каждую минуту с 08:00 до 23:59 МСК (будни)
     var indexJobKey = JobKey.Create(nameof(IndexJob));
-    quartz.AddJob<IndexJob>(indexJobKey).AddTrigger(trigger => trigger
-        .ForJob(indexJobKey)
-        .WithIdentity(nameof(IndexJob)+".Trigger")
-        .WithSimpleSchedule(x=>x.WithIntervalInMinutes(1))
-    );
+    quartz.AddJob<IndexJob>(indexJobKey)
+        .AddTrigger(t => t
+            .ForJob(indexJobKey)
+            .WithIdentity($"{nameof(IndexJob)}.Trigger")
+            .WithSchedule(
+                CronScheduleBuilder
+                    // sec min hour dayOfMonth month dayOfWeek
+                    .CronSchedule("0 0/1 8-23 ? * MON-FRI")
+                    .InTimeZone(tzMoscow)
+            )
+        );
+
+// DAILY: раз в сутки на старте торгов США (09:30 по Нью-Йорку, будни)
     var dailyJobKey = JobKey.Create(nameof(DailyJob));
-    quartz.AddJob<DailyJob>(JobKey.Create(nameof(DailyJob))).AddTrigger(trigger => trigger
-        .ForJob(dailyJobKey)
-        .WithIdentity(nameof(DailyJob) + ".Trigger")
-        .WithSimpleSchedule(x => x.WithIntervalInHours(24)));
+    quartz.AddJob<DailyJob>(dailyJobKey)
+        .AddTrigger(t => t
+            .ForJob(dailyJobKey)
+            .WithIdentity($"{nameof(DailyJob)}.Trigger")
+            .WithSchedule(
+                CronScheduleBuilder
+                    .CronSchedule("0 30 9 ? * MON-FRI")
+                    .InTimeZone(tzNewYork)
+            )
+        );
 });
+
+builder.Services.AddScoped<ICsvReporter, CsvReporter>();
+
+#region CryptoExchanges
+
+builder.Services.AddHttpClient<IExchangeRepo, BinanceRepo>(BinanceRepo.Name,opt =>
+{
+    opt.BaseAddress = new Uri(BinanceRepo.BaseAddress, UriKind.Absolute);
+    opt.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+    opt.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json");
+});
+
+builder.Services.AddHttpClient<IExchangeRepo, ByBitRepo>(ByBitRepo.Name,opt =>
+{
+    opt.BaseAddress = new Uri(ByBitRepo.BaseAddress, UriKind.Absolute);
+    opt.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+    opt.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json");
+});
+
+builder.Services.AddHttpClient<IExchangeRepo, OkxRepo>(OkxRepo.Name,opt =>
+{
+    opt.BaseAddress = new Uri(OkxRepo.BaseAddress, UriKind.Absolute);
+    opt.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+    opt.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json");
+});
+
+builder.Services.AddHttpClient<IExchangeRepo, BitGetRepo>(BitGetRepo.Name,opt =>
+{
+    opt.BaseAddress = new Uri(BitGetRepo.BaseAddress, UriKind.Absolute);
+    opt.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
+    opt.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json");
+});
+
+#endregion
+
+builder.Services.AddSerilog();
 
 var app = builder.Build();
 

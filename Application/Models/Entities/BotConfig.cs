@@ -5,5 +5,7 @@ public class BotConfig
     public int InstrumentId { get; set; }
     public string Endpoint { get; set; }
 
+    public string LogPath { get; set; } = "./";
+
     public CoefficientStorage Coefficients { get; set; } = null!;
 }

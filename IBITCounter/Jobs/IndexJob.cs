@@ -1,22 +1,41 @@
+using System.Text.Json;
 using Application.Models.Entities;
 using Application.Services;
+using Application.Services.Exchanges;
 using Quartz;
 
 namespace IBITCounter.Jobs;
 
-public class IndexJob(IIndexSender indexSender, ICpmRepo cpmRepo, CoefficientStorage coeff, ILogger<IndexJob> logger) : IJob
+public class IndexJob(
+    IIndexSender indexSender, 
+    ICpmRepo cpmRepo, 
+    CoefficientStorage coeff,
+    ICsvReporter csvReporter,
+    IServiceProvider serviceProvider, 
+    ILogger<IndexJob> logger) : IJob
 {
     public async Task Execute(IJobExecutionContext context)
     {
         logger.LogInformation("IndexJob started");
         var dt = DateTime.UtcNow;
-        dt = new DateTime(dt.Year, dt.Month, dt.Day, 0, 0, 0, DateTimeKind.Utc);
+        dt = new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, 0, DateTimeKind.Utc);
+        
         var cpm = await cpmRepo.GetLatest1MinAsync(dt, context.CancellationToken);
         logger
             .LogInformation("Got cpm from {TradeTime:yyyy-MM-dd hh:mm} (utc) to {DateTime:yyyy-MM-dd hh:mm} (utc)", 
                 cpm.Last().TradeTime, cpm.First().TradeTime);
 
-        var indexValue = Counter.Count(Counter.CountCpm(cpm, dt), coeff);
+        var weightedAvg = await CountWeightedAvg(dt, context.CancellationToken);
+        var cpmAvg = Counter.CountCpm(cpm, dt - TimeSpan.FromMinutes(1));
+
+        var indexValue = Counter.Count( cpmAvg, new CoefficientStorage()
+        {
+            Day = coeff.Day,
+            StakingFee = coeff.StakingFee,
+            Median = cpmAvg/weightedAvg
+        });
+        
+        
         
         await indexSender.SendCpmAsync(new CurrentPriceOfMarket()
         {
@@ -24,6 +43,54 @@ public class IndexJob(IIndexSender indexSender, ICpmRepo cpmRepo, CoefficientSto
             TradeTime = dt,
             Price = indexValue
         },  context.CancellationToken);
+        
+        await csvReporter.LogAsync(new Report()
+        {
+            Timestamp = dt,
+            Cpm = cpmAvg,
+            WeightedAverage = weightedAvg,
+            Day = coeff.Day,
+            Index = indexValue,
+            Median = cpmAvg/weightedAvg,
+            Staking = coeff.StakingFee
+        },context.CancellationToken);
         logger.LogInformation("Index counted on {DateTime:yyyy-MM-dd hh:mm} - {IndexValue}", dt, indexValue);
+    }
+
+    private async Task<double> CountWeightedAvg(DateTime dt, CancellationToken ct = default)
+    {
+        logger.LogInformation("Started counting weighted avg");
+        using var scope = serviceProvider.CreateScope();
+        var binanceRepo = scope.ServiceProvider.GetRequiredKeyedService<IExchangeRepo>(BinanceRepo.Name);
+        var byBitRepo = scope.ServiceProvider.GetRequiredKeyedService<IExchangeRepo>(ByBitRepo.Name);
+        var okxRepo = scope.ServiceProvider.GetRequiredKeyedService<IExchangeRepo>(ByBitRepo.Name);
+        var bitGetRepo = scope.ServiceProvider.GetRequiredKeyedService<IExchangeRepo>(BitGetRepo.Name);
+        
+
+        var startTime = dt - TimeSpan.FromMinutes(2);
+        var endTime = DateTime.UtcNow;
+        
+        var candleTasks = new List<Task<IEnumerable<Candle>>>()
+        {
+            binanceRepo.GetCandlesAsync("BTCUSDT", startTime, endTime, "1m", ct),
+            byBitRepo.GetCandlesAsync("BTCUSDT", startTime, endTime, "1", ct),
+            okxRepo.GetCandlesAsync("BTC-USDT", startTime, endTime, "1m", ct),
+            bitGetRepo.GetCandlesAsync("BTCUSDT",  startTime, endTime, "1min", ct),
+        };
+        var taskRes = await Task.WhenAll(candleTasks);
+        
+        logger.LogInformation("Received market data from exchanges");
+        
+        var searchDate = dt - TimeSpan.FromMinutes(1);
+        
+        var candles = new List<Candle>();
+        foreach (var task in taskRes) candles.AddRange(task);
+        candles = candles.Where(x=>x.Timestamp == searchDate).ToList();
+        
+        logger.LogInformation($"Got {candles.Count} candles from {candles.FirstOrDefault()?.Timestamp}");
+        
+        var totalVolume = candles.Sum(x => x.Volume);
+
+        return candles.Sum(x => x.Close * x.Volume/totalVolume);
     }
 }
