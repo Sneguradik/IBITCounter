@@ -22,27 +22,24 @@ public class IndexJob(
         
         var cpm = await cpmRepo.GetLatest1MinAsync(dt, context.CancellationToken);
         logger
-            .LogInformation("Got cpm from {TradeTime:yyyy-MM-dd hh:mm} (utc) to {DateTime:yyyy-MM-dd hh:mm} (utc)", 
+            .LogInformation("Got cpm from {TradeTime:yyyy-MM-dd HH:mm} (utc) to {DateTime:yyyy-MM-dd HH:mm} (utc)", 
                 cpm.Last().TradeTime, cpm.First().TradeTime);
 
         var weightedAvg = await CountWeightedAvg(dt, context.CancellationToken);
+        double median;
         var cpmAvg = Counter.CountCpm(cpm, dt - TimeSpan.FromMinutes(1));
+        
+        if (weightedAvg == 0) median = coeff.Median;
+        else median = cpmAvg/weightedAvg;
+        
+        coeff.Median = median;
 
         var indexValue = Counter.Count( cpmAvg, new CoefficientStorage()
         {
             Day = coeff.Day,
             StakingFee = coeff.StakingFee,
-            Median = cpmAvg/weightedAvg
+            Median = median
         });
-        
-        
-        
-        await indexSender.SendCpmAsync(new CurrentPriceOfMarket()
-        {
-            Amount = 0,
-            TradeTime = dt,
-            Price = indexValue
-        },  context.CancellationToken);
         
         await csvReporter.LogAsync(new Report()
         {
@@ -53,20 +50,40 @@ public class IndexJob(
             Index = indexValue,
             Median = cpmAvg/weightedAvg,
             Staking = coeff.StakingFee
-        },context.CancellationToken);
-        logger.LogInformation("Index counted on {DateTime:yyyy-MM-dd hh:mm} - {IndexValue}", dt, indexValue);
+        }, context.CancellationToken);
+
+        try
+        {
+            await indexSender.SendCpmAsync(new CurrentPriceOfMarket()
+            {
+                Amount = 0,
+                TradeTime = dt,
+                Price = indexValue
+            }, context.CancellationToken);
+        }
+        catch (Exception e)
+        {
+            logger.LogError(e, e.Message);
+            await indexSender.SendCpmAsync(new CurrentPriceOfMarket()
+            {
+                Amount = 0,
+                TradeTime = dt,
+                Price = indexValue
+            }, context.CancellationToken);
+        }
+        
+        logger.LogInformation("Index counted on {DateTime:yyyy-MM-dd HH:mm} - {IndexValue}", dt, indexValue);
     }
 
     private async Task<double> CountWeightedAvg(DateTime dt, CancellationToken ct = default)
     {
         logger.LogInformation("Started counting weighted avg");
         using var scope = serviceProvider.CreateScope();
+        
         var binanceRepo = scope.ServiceProvider.GetRequiredKeyedService<IExchangeRepo>(BinanceRepo.Name);
         var byBitRepo = scope.ServiceProvider.GetRequiredKeyedService<IExchangeRepo>(ByBitRepo.Name);
-        var okxRepo = scope.ServiceProvider.GetRequiredKeyedService<IExchangeRepo>(ByBitRepo.Name);
         var bitGetRepo = scope.ServiceProvider.GetRequiredKeyedService<IExchangeRepo>(BitGetRepo.Name);
         
-
         var startTime = dt - TimeSpan.FromMinutes(2);
         var endTime = DateTime.UtcNow;
         
@@ -74,7 +91,6 @@ public class IndexJob(
         {
             binanceRepo.GetCandlesAsync("BTCUSDT", startTime, endTime, "1m", ct),
             byBitRepo.GetCandlesAsync("BTCUSDT", startTime, endTime, "1", ct),
-            okxRepo.GetCandlesAsync("BTC-USDT", startTime, endTime, "1m", ct),
             bitGetRepo.GetCandlesAsync("BTCUSDT",  startTime, endTime, "1min", ct),
         };
         var taskRes = await Task.WhenAll(candleTasks);
@@ -84,10 +100,14 @@ public class IndexJob(
         var searchDate = dt - TimeSpan.FromMinutes(1);
         
         var candles = new List<Candle>();
+        
         foreach (var task in taskRes) candles.AddRange(task);
+        
+        if (candles.Count == 0) return 0;
+        
         candles = candles.Where(x=>x.Timestamp == searchDate).ToList();
         
-        logger.LogInformation($"Got {candles.Count} candles from {candles.FirstOrDefault()?.Timestamp}");
+        logger.LogInformation($"Got {candles.Count} candles from {candles.FirstOrDefault()?.Timestamp:yyyy-MM-dd HH:mm}");
         
         var totalVolume = candles.Sum(x => x.Volume);
 

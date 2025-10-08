@@ -22,6 +22,6 @@ public class CsvReporter(IOptions<BotConfig> config) : ICsvReporter
         if (!exists) await writer.WriteLineAsync("Timestamp,Index,Cpm,WeightedAverage,Staking,Median,Day");
 
         await writer
-            .WriteLineAsync($"{report.Timestamp},{report.Index.ToString(CultureInfo.InvariantCulture)},{report.Cpm.ToString(CultureInfo.InvariantCulture)},{report.WeightedAverage.ToString(CultureInfo.InvariantCulture)},{report.Staking.ToString(CultureInfo.InvariantCulture)},{report.Median.ToString(CultureInfo.InvariantCulture)},{report.Day.ToString(CultureInfo.InvariantCulture)}");
+            .WriteLineAsync($"{report.Timestamp:yyyy-MM-dd HH:mm},{report.Index.ToString(CultureInfo.InvariantCulture)},{report.Cpm.ToString(CultureInfo.InvariantCulture)},{report.WeightedAverage.ToString(CultureInfo.InvariantCulture)},{report.Staking.ToString(CultureInfo.InvariantCulture)},{report.Median.ToString(CultureInfo.InvariantCulture)},{report.Day.ToString(CultureInfo.InvariantCulture)}");
     }
 }

@@ -115,6 +115,27 @@ builder.Services.AddHttpClient<IExchangeRepo, BitGetRepo>(BitGetRepo.Name,opt =>
     opt.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json");
 });
 
+builder.Services.AddKeyedTransient<IExchangeRepo>(BinanceRepo.Name, (sp, _) =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient(BinanceRepo.Name);
+    return ActivatorUtilities.CreateInstance<BinanceRepo>(sp, http);
+});
+builder.Services.AddKeyedTransient<IExchangeRepo>(ByBitRepo.Name, (sp, _) =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient(ByBitRepo.Name);
+    return ActivatorUtilities.CreateInstance<ByBitRepo>(sp, http);
+});
+builder.Services.AddKeyedTransient<IExchangeRepo>(OkxRepo.Name, (sp, _) =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient(OkxRepo.Name);
+    return ActivatorUtilities.CreateInstance<OkxRepo>(sp, http);
+});
+builder.Services.AddKeyedTransient<IExchangeRepo>(BitGetRepo.Name, (sp, _) =>
+{
+    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient(BitGetRepo.Name);
+    return ActivatorUtilities.CreateInstance<BitGetRepo>(sp, http);
+});
+
 #endregion
 
 builder.Services.AddSerilog();
