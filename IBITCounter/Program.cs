@@ -101,12 +101,6 @@ builder.Services.AddHttpClient<IExchangeRepo, ByBitRepo>(ByBitRepo.Name,opt =>
     opt.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json");
 });
 
-builder.Services.AddHttpClient<IExchangeRepo, OkxRepo>(OkxRepo.Name,opt =>
-{
-    opt.BaseAddress = new Uri(OkxRepo.BaseAddress, UriKind.Absolute);
-    opt.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
-    opt.DefaultRequestHeaders.TryAddWithoutValidation("Content-Type", "application/json");
-});
 
 builder.Services.AddHttpClient<IExchangeRepo, BitGetRepo>(BitGetRepo.Name,opt =>
 {
@@ -125,11 +119,6 @@ builder.Services.AddKeyedTransient<IExchangeRepo>(ByBitRepo.Name, (sp, _) =>
     var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient(ByBitRepo.Name);
     return ActivatorUtilities.CreateInstance<ByBitRepo>(sp, http);
 });
-builder.Services.AddKeyedTransient<IExchangeRepo>(OkxRepo.Name, (sp, _) =>
-{
-    var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient(OkxRepo.Name);
-    return ActivatorUtilities.CreateInstance<OkxRepo>(sp, http);
-});
 builder.Services.AddKeyedTransient<IExchangeRepo>(BitGetRepo.Name, (sp, _) =>
 {
     var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient(BitGetRepo.Name);
@@ -141,8 +130,6 @@ builder.Services.AddKeyedTransient<IExchangeRepo>(BitGetRepo.Name, (sp, _) =>
 builder.Services.AddSerilog();
 
 var app = builder.Build();
-
-
 
 app.UseHttpsRedirection();
 

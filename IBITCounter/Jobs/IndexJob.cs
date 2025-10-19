@@ -26,20 +26,10 @@ public class IndexJob(
                 cpm.Last().TradeTime, cpm.First().TradeTime);
 
         var weightedAvg = await CountWeightedAvg(dt, context.CancellationToken);
-        double median;
+        
         var cpmAvg = Counter.CountCpm(cpm, dt - TimeSpan.FromMinutes(1));
         
-        if (weightedAvg == 0) median = coeff.Median;
-        else median = cpmAvg/weightedAvg;
-        
-        coeff.Median = median;
-
-        var indexValue = Counter.Count( cpmAvg, new CoefficientStorage()
-        {
-            Day = coeff.Day,
-            StakingFee = coeff.StakingFee,
-            Median = median
-        });
+        var indexValue = Counter.Count( cpmAvg, coeff);
         
         await csvReporter.LogAsync(new Report()
         {
@@ -48,28 +38,28 @@ public class IndexJob(
             WeightedAverage = weightedAvg,
             Day = coeff.Day,
             Index = indexValue,
-            Median = cpmAvg/weightedAvg,
+            Median = coeff.Median,
             Staking = coeff.StakingFee
         }, context.CancellationToken);
 
         try
         {
-            await indexSender.SendCpmAsync(new CurrentPriceOfMarket()
+            await indexSender.SendCpmAsync([new CurrentPriceOfMarket()
             {
                 Amount = 0,
                 TradeTime = dt,
                 Price = indexValue
-            }, context.CancellationToken);
+            }], context.CancellationToken);
         }
         catch (Exception e)
         {
             logger.LogError(e, e.Message);
-            await indexSender.SendCpmAsync(new CurrentPriceOfMarket()
+            await indexSender.SendCpmAsync([new CurrentPriceOfMarket()
             {
                 Amount = 0,
                 TradeTime = dt,
                 Price = indexValue
-            }, context.CancellationToken);
+            }], context.CancellationToken);
         }
         
         logger.LogInformation("Index counted on {DateTime:yyyy-MM-dd HH:mm} - {IndexValue}", dt, indexValue);
