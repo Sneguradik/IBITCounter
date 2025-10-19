@@ -77,8 +77,8 @@ builder.Services.AddQuartz(quartz =>
             .WithIdentity($"{nameof(DailyJob)}.Trigger")
             .WithSchedule(
                 CronScheduleBuilder
-                    .CronSchedule("0 30 9 ? * MON-FRI")
-                    .InTimeZone(tzNewYork)
+                    .CronSchedule("0 0 0 ? * MON-FRI")
+                    .InTimeZone(tzMoscow)
             )
         );
 });
